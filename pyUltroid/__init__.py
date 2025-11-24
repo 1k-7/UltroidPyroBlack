@@ -77,7 +77,9 @@ if run_as_module:
     if USER_MODE:
         asst = ultroid_bot
     else:
-        asst = UltroidClient("asst", bot_token=udB.get_key("BOT_TOKEN"), udB=udB)
+        client_id = os.environ.get("CLIENT_ID", "1")
+        asst_session = f"asst_{client_id}"
+        asst = UltroidClient(asst_session, bot_token=udB.get_key("BOT_TOKEN"), udB=udB)
 
     if BOT_MODE:
         ultroid_bot = asst
