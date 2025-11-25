@@ -15,5 +15,16 @@ echo "
       Visit @TheUltroid for updates!!
 
 "
-if [ -f .env ] ; then  set -o allexport; source .env; set +o allexport ; fi
-if [ $SESSION1 ] ; then python3 multi_client.py ; else python3 -m pyUltroid ; fi
+if [ -f .env ] ; then 
+    set -o allexport; 
+    source .env; 
+    set +o allexport ; 
+fi
+
+if [ "$SESSION2" ] || [ "$SESSION1" ] ; then 
+    echo "Starting in Multi-Client Mode..."
+    python3 multi_client.py 
+else 
+    echo "Starting in Single-Client Mode..."
+    python3 -m pyUltroid 
+fi
