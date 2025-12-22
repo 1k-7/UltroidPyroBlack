@@ -300,9 +300,18 @@ async def updater():
     ac_br = repo.active_branch.name
     repo.create_remote("upstream", off_repo) if "upstream" not in repo.remotes else None
     ups_rem = repo.remote("upstream")
-    ups_rem.fetch(ac_br)
+
+    try:
+        ups_rem.fetch(ac_br)
+    except GitCommandError:
+        LOGS.warning(
+        f"Updater skipped: branch '{ac_br}' not found in upstream"
+    )
+        return False
+
     changelog, tl_chnglog = await gen_chlog(repo, f"HEAD..upstream/{ac_br}")
     return bool(changelog)
+
 
 
 # ----------------Fast Upload/Download----------------

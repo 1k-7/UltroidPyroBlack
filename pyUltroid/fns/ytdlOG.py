@@ -1,9 +1,17 @@
+# Ultroid - UserBot
+# Copyright (C) 2021-2025 TeamUltroid
+#
+# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
+# PLease read the GNU Affero General Public License in
+# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+
 import glob
 import os
 import re
 import time
 
 from telethon import Button
+
 from yt_dlp import YoutubeDL
 
 from .. import LOGS, udB
@@ -11,7 +19,7 @@ from .helper import download_file, humanbytes, run_async, time_formatter
 from .tools import set_attributes
 
 
-# ------------ Progreso de descarga ------------
+
 async def ytdl_progress(k, start_time, event):
     if k["status"] == "error":
         return await event.edit("error")
@@ -30,26 +38,14 @@ async def ytdl_progress(k, start_time, event):
                 LOGS.error(f"ytdl_progress: {ex}")
 
 
-# ------------ Obtener el enlace de YouTube (ahora con yt-dlp) ------------
 def get_yt_link(query):
-    ydl_opts = {
-        "quiet": True,
-        "default_search": "ytsearch1",  # Búsqueda en YouTube
-        "skip_download": True,  # No descargamos, solo extraemos la URL
-        "nocheckcertificate": True,  # Desactivar la verificación del certificado SSL
-    }
-    
+    search = VideosSearch(query, limit=1).result()
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            if "entries" in info and info["entries"]:
-                return info["entries"][0].get("webpage_url")
-    except Exception as e:
-        LOGS.error(f"Error al obtener el enlace: {e}")
-        return None
+        return search["result"][0]["link"]
+    except IndexError:
+        return
 
 
-# ------------ Descargar el video o playlist ------------
 async def download_yt(event, link, ytd):
     reply_to = event.reply_to_msg_id or event
     info = await dler(event, link, ytd, download=True)
@@ -162,25 +158,10 @@ async def download_yt(event, link, ytd):
         pass
 
 
-# --------------- Obtener enlaces de videos en una playlist (usando yt-dlp) ---------------
-async def get_videos_link(url):
-    to_return = []
-    
-    ydl_opts = {
-        "quiet": True,
-        "extract_flat": True,  # Esto solo extrae los enlaces sin descargarlos
-    }
-    
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if 'entries' in info:
-            for entry in info['entries']:
-                to_return.append(entry['url'])
-    
-    return to_return
+# ---------------YouTube Downloader Inline---------------
+# @New-Dev0 @buddhhu @1danish-00
 
 
-# --------------- Obtener los botones de calidad de video y audio ---------------
 def get_formats(type, id, data):
     if type == "audio":
         audio = []
@@ -224,7 +205,6 @@ def get_formats(type, id, data):
     return []
 
 
-# --------------- Crear botones para selección de formatos ---------------
 def get_buttons(listt):
     id = listt[0]["ytid"]
     butts = [
@@ -243,7 +223,6 @@ def get_buttons(listt):
     return buttons
 
 
-# --------------- Función para obtener el enlace del video ---------------
 async def dler(event, url, opts: dict = {}, download=False):
     await event.edit("`Getting Data...`")
     if "quiet" not in opts:
@@ -259,7 +238,6 @@ async def dler(event, url, opts: dict = {}, download=False):
         return
 
 
-# --------------- Descargar el video usando yt-dlp ---------------
 @run_async
 def ytdownload(url, opts):
     try:
@@ -268,25 +246,20 @@ def ytdownload(url, opts):
         LOGS.error(ex)
 
 
-# --------------- Extraer información del video ---------------
 @run_async
 def extract_info(url, opts):
     return YoutubeDL(opts).extract_info(url=url, download=False)
 
 
-# --------------- Obtener los enlaces de los videos de la playlist ---------------
-async def get_videos_link(url):
+@run_async
+def get_videos_link(url):
     to_return = []
-    
-    ydl_opts = {
-        "quiet": True,
-        "extract_flat": True,  # Esto solo extrae los enlaces sin descargarlos
-    }
-    
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if 'entries' in info:
-            for entry in info['entries']:
-                to_return.append(entry['url'])
-    
+    regex = re.search(r"\?list=([(\w+)\-]*)", url)
+    if not regex:
+        return to_return
+    playlist_id = regex.group(1)
+    videos = Playlist(playlist_id)
+    for vid in videos.videos:
+        link = re.search(r"\?v=([(\w+)\-]*)", vid["link"]).group(1)
+        to_return.append(f"https://youtube.com/watch?v={link}")
     return to_return
