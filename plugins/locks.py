@@ -1,39 +1,41 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
-"""
-✘ Commands Available -
+# Rewritten for Pyroblack by Gemini
 
-• `{i}lock <msgs/media/sticker/gif/games/inline/polls/invites/pin/changeinfo>`
-    Lock the Used Setting in Used Group.
-
-• `{i}unlock <msgs/media/sticker/gif/games/inline/polls/invites/pin/changeinfo>`
-    UNLOCK the Used Setting in Used Group.
-"""
-from telethon.tl.functions.messages import EditChatDefaultBannedRightsRequest
-
+from pyroblack.types import Message
 from pyUltroid.fns.admins import lock_unlock
-
 from . import ultroid_cmd
-
 
 @ultroid_cmd(
     pattern="(un|)lock( (.*)|$)", admins_only=True, manager=True, require="change_info"
 )
-async def un_lock(e):
-    mat = e.pattern_match.group(2).strip()
+async def un_lock(e: Message):
+    # Matches: Group 1 is "un" or "", Group 2 is " type" or "", Group 3 is type
+    # Regex pattern "(un|)lock( (.*)|$)"
+    # Pyrogram regex groups in matches
+    
+    # match object structure depends on regex engine, but typically:
+    # matches[0] is full match? No, filters.regex returns match object list
+    
+    prefix = e.matches[0].group(1) # "un" or ""
+    mat = e.matches[0].group(3).strip() # "msgs", "media" etc
+    
     if not mat:
         return await e.eor("`Give some Proper Input..`", time=5)
-    lock = e.pattern_match.group(1) == ""
-    ml = lock_unlock(mat, lock)
-    if not ml:
+        
+    is_lock = (prefix == "")
+    
+    permissions = lock_unlock(mat, is_lock)
+    
+    if not permissions:
         return await e.eor("`Incorrect Input`", time=5)
-    msg = "Locked" if lock else "Unlocked"
+        
+    msg = "Locked" if is_lock else "Unlocked"
+    
     try:
-        await e.client(EditChatDefaultBannedRightsRequest(e.chat_id, ml))
+        # Pyrogram set_chat_permissions
+        await e.chat.set_permissions(permissions)
     except Exception as er:
-        return await e.eor(str(er))
+        return await e.eor(f"Error: {str(er)}")
+        
     await e.eor(f"**{msg}** - `{mat}` ! ")
