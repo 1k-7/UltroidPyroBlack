@@ -12,6 +12,7 @@ import os
 import time
 from datetime import datetime as dt
 
+# Explicit imports to ensure availability
 from pyUltroid import ULTConfig
 from pyUltroid.fns.helper import time_formatter, fast_download
 from pyUltroid.fns.tools import get_chat_and_msgid, set_attributes
@@ -25,13 +26,14 @@ from . import (
     ultroid_cmd,
 )
 
-# Shared Upload Function
+# --- Upload Helper ---
 async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb):
     s_time = time.time()
-    caption = f"`Uploaded` `{os.path.basename(file_path)}`"
+    filename = os.path.basename(file_path)
+    caption = f"`Uploaded` `{filename}`"
     
-    # Handle Reply ID
-    reply_to = event.reply_to_message.id if event.reply_to_message else event.id
+    # Determine Reply ID
+    reply_id = event.reply_to_message.id if event.reply_to_message else event.id
     client = event._client
     
     try:
@@ -42,11 +44,10 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                 thumb=thumb,
                 caption=caption,
                 progress=progress,
-                progress_args=(msg, s_time, f"Uploading {os.path.basename(file_path)}"),
-                reply_to_message_id=reply_to
+                progress_args=(msg, s_time, f"Uploading {filename}"),
+                reply_to_message_id=reply_id
             )
         elif stream:
-             # Guess MediaType
              ext = os.path.splitext(file_path)[1].lower()
              if ext in [".mp4", ".mkv", ".webm"]:
                  await client.send_video(
@@ -56,8 +57,8 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                      caption=caption,
                      supports_streaming=True,
                      progress=progress,
-                     progress_args=(msg, s_time, f"Uploading {os.path.basename(file_path)}"),
-                     reply_to_message_id=reply_to
+                     progress_args=(msg, s_time, f"Uploading {filename}"),
+                     reply_to_message_id=reply_id
                  )
              elif ext in [".mp3", ".ogg", ".wav", ".m4a"]:
                  await client.send_audio(
@@ -66,8 +67,8 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                      thumb=thumb,
                      caption=caption,
                      progress=progress,
-                     progress_args=(msg, s_time, f"Uploading {os.path.basename(file_path)}"),
-                     reply_to_message_id=reply_to
+                     progress_args=(msg, s_time, f"Uploading {filename}"),
+                     reply_to_message_id=reply_id
                  )
              else:
                  await client.send_document(
@@ -76,19 +77,18 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                     thumb=thumb,
                     caption=caption,
                     progress=progress,
-                    progress_args=(msg, s_time, f"Uploading {os.path.basename(file_path)}"),
-                    reply_to_message_id=reply_to
+                    progress_args=(msg, s_time, f"Uploading {filename}"),
+                    reply_to_message_id=reply_id
                 )
         else:
-             # Default Smart Upload
              await client.send_document(
                 event.chat.id,
                 document=file_path,
                 thumb=thumb,
                 caption=caption,
                 progress=progress,
-                progress_args=(msg, s_time, f"Uploading {os.path.basename(file_path)}"),
-                reply_to_message_id=reply_to
+                progress_args=(msg, s_time, f"Uploading {filename}"),
+                reply_to_message_id=reply_id
             )
             
         if delete and os.path.exists(file_path):
@@ -99,56 +99,72 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
         await msg.edit(f"**Upload Error:** `{e}`")
 
 
+# --- Commands ---
+
 @ultroid_cmd(pattern="dls( (.*)|$)")
 async def download_and_stream(event):
     """Download from link and Upload to Chat"""
-    # 1. Immediate Feedback
-    msg = await event.eor("`Processing request...`")
+    # Debug log to verify trigger
+    LOGS.info(f"dls command triggered by {event.from_user.id}")
     
-    # 2. Parse Arguments
     try:
-        match = event.matches[0].group(1).strip() if event.matches else None
-    except:
+        # Immediate response
+        msg = await event.eor("`Processing request...`")
+        
+        # Parse Arguments manually to be safe
+        text = event.text or ""
         match = None
         
-    if not match:
-        return await msg.edit("`Give me a link to download!\nUsage: .dls <link> [| filename]`")
+        # Remove command prefix and command name
+        if " " in text:
+            match = text.split(" ", 1)[1].strip()
+            
+        if not match:
+            return await msg.edit("`Give me a link to download!\nUsage: .dls <link> [| filename]`")
+            
+        filename = None
+        if " | " in match:
+            match, filename = match.split(" | ", 1)
+            
+        await msg.edit(f"`Starting Download...`\n`Link:` {match}")
         
-    filename = None
-    if " | " in match:
-        match, filename = match.split(" | ", maxsplit=1)
-        
-    await msg.edit(f"`Starting Download: {match}`")
-    
-    s_time = time.time()
-    try:
-        # 3. Download
-        file_path, d = await fast_download(
-            match,
-            filename,
-            progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
-                progress(d, t, msg, s_time, f"Downloading...")
-            ),
-        )
-    except Exception as e:
-        LOGS.exception(e)
-        return await msg.edit(f"**Download Failed:**\n`{e}`")
-        
-    if not file_path or not os.path.exists(file_path):
-        return await msg.edit("`Download failed (File not found on server).`")
+        s_time = time.time()
+        try:
+            # Call helper
+            file_path, d = await fast_download(
+                match,
+                filename,
+                progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                    progress(d, t, msg, s_time, f"Downloading...")
+                ),
+            )
+        except Exception as e:
+            LOGS.exception(e)
+            return await msg.edit(f"**Download Failed:**\n`{e}`")
+            
+        if not file_path or not os.path.exists(file_path):
+            return await msg.edit("`Download failed (File not found on server).`")
 
-    await msg.edit(f"`Download Complete. Uploading...`")
-    
-    # 4. Upload
-    await upload_process(
-        event, 
-        msg, 
-        file_path, 
-        stream=False, 
-        force_doc=False, 
-        delete=True, 
-        thumb=ULTConfig.thumb
-    )
+        await msg.edit(f"`Download Complete. Uploading...`")
+        
+        # Upload
+        await upload_process(
+            event, 
+            msg, 
+            file_path, 
+            stream=False, 
+            force_doc=False, 
+            delete=True, 
+            thumb=ULTConfig.thumb
+        )
+        
+    except Exception as critical_e:
+        LOGS.exception(critical_e)
+        # Try to report crash
+        try:
+            await event.reply(f"**Critical Error in .dls:** `{critical_e}`")
+        except:
+            pass
 
 
 @ultroid_cmd(
@@ -162,14 +178,13 @@ async def down(event):
         return await eor(msg, get_string("udl_5"), time=5)
     
     try:
-        splited = match.split(" | ")
-        link = splited[0]
-        filename = splited[1] if len(splited) > 1 else None
-    except IndexError:
-        filename = None
-        
-    s_time = time.time()
-    try:
+        if " | " in match:
+            link, filename = match.split(" | ", 1)
+        else:
+            link = match
+            filename = None
+            
+        s_time = time.time()
         filename, d = await fast_download(
             link,
             filename,
@@ -177,10 +192,9 @@ async def down(event):
                 progress(d, t, msg, s_time, f"Downloading from {link}")
             ),
         )
+        await msg.eor(f"`{filename}` `downloaded in {time_formatter(d*1000)}.`")
     except Exception as e:
         return await msg.eor(f"`Error: {e}`", time=5)
-        
-    await msg.eor(f"`{filename}` `downloaded in {time_formatter(d*1000)}.`")
 
 
 @ultroid_cmd(
@@ -222,7 +236,6 @@ async def download(event):
             filename = ok.audio.file_name
             
     if not filename:
-        # Generate generic name
         ext = ""
         if ok.photo: ext = ".jpg"
         elif ok.sticker: ext = ".webp"
@@ -231,7 +244,6 @@ async def download(event):
         elif ok.voice: ext = ".ogg"
         filename = f"file_{dt.now().strftime('%Y%m%d_%H%M%S')}{ext}"
 
-    # Ensure dir
     if not os.path.exists("resources/downloads"):
         os.makedirs("resources/downloads", exist_ok=True)
 
@@ -243,14 +255,14 @@ async def download(event):
             progress=progress,
             progress_args=(xx, k, get_string("com_5"))
         )
+        
+        e = dt.now()
+        t = time_formatter(((e - s).seconds) * 1000)
+        final_name = os.path.basename(file_path) if file_path else filename
+        await xx.eor(get_string("udl_2").format(final_name, t))
+        
     except Exception as err:
         return await xx.edit(f"Download Failed: {err}")
-        
-    e = dt.now()
-    t = time_formatter(((e - s).seconds) * 1000)
-    
-    final_name = os.path.basename(file_path) if file_path else filename
-    await xx.eor(get_string("udl_2").format(final_name, t))
 
 
 @ultroid_cmd(
