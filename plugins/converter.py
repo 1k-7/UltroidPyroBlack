@@ -1,9 +1,6 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
+# Rewritten for Pyroblack by Gemini
 
 from . import get_help
 
@@ -12,96 +9,68 @@ __doc__ = get_help("help_converter")
 import os
 import time
 
-from . import LOGS
-
-try:
-    import cv2
-except ImportError:
-    cv2 = None
-
-try:
-    from PIL import Image
-except ImportError:
-    LOGS.info(f"{__file__}: PIL  not Installed.")
-    Image = None
-
-from . import upload_file as uf
-
-from . import (
-    ULTConfig,
-    bash,
-    con,
-    downloader,
-    get_paste,
-    get_string,
-    udB,
-    ultroid_cmd,
-    uploader,
-)
-
-opn = []
-
+from . import LOGS, ULTConfig, bash
+from . import eor, get_paste, get_string, udB, ultroid_cmd
+from pyUltroid.fns.tools import TgConverter as con
+from pyUltroid.fns.FastTelethon import upload_file as uf 
 
 @ultroid_cmd(
     pattern="thumbnail$",
 )
 async def _(e):
-    r = await e.get_reply_message()
-    if r.photo:
-        dl = await r.download_media()
-    elif r.document and r.document.thumbs:
-        dl = await r.download_media(thumb=-1)
+    r = e.reply_to_message
+    if not r:
+        return await e.eor("`Reply to Photo or media with thumb...`")
+        
+    if r.photo or (r.document and r.document.thumbs):
+        dl = await r.download(file_name="resources/downloads/thumb_dl.jpg")
     else:
         return await e.eor("`Reply to Photo or media with thumb...`")
-    nn = uf(dl)
-    os.remove(dl)
-    udB.set_key("CUSTOM_THUMBNAIL", str(nn))
-    await bash(f"wget {nn} -O resources/extras/ultroid.jpg")
-    await e.eor(get_string("cvt_6").format(nn), link_preview=False)
+        
+    # uf is FastTelethon wrapper, likely compatible if rewrote
+    # But for thumb, we just set path
+    udB.set_key("CUSTOM_THUMBNAIL", str(dl))
+    # Backup to resources
+    await bash(f"cp {dl} resources/extras/ultroid.jpg")
+    await e.eor(f"Thumbnail Saved.", link_preview=False)
 
 
 @ultroid_cmd(
     pattern="rename( (.*)|$)",
 )
 async def imak(event):
-    reply = await event.get_reply_message()
-    t = time.time()
+    reply = event.reply_to_message
     if not reply:
         return await event.eor(get_string("cvt_1"))
-    inp = event.pattern_match.group(1).strip()
+        
+    inp = event.matches[0].group(1).strip() if event.matches else None
     if not inp:
         return await event.eor(get_string("cvt_2"))
+        
     xx = await event.eor(get_string("com_1"))
-    if reply.media:
-        if hasattr(reply.media, "document"):
-            file = reply.media.document
-            image = await downloader(
-                reply.file.name or str(time.time()),
-                reply.media.document,
-                xx,
-                t,
-                get_string("com_5"),
-            )
+    
+    # Download
+    try:
+        file = await reply.download(file_name=f"resources/downloads/{inp}")
+    except Exception as er:
+        return await xx.edit(f"Download Error: {er}")
+        
+    if not file:
+        return await xx.edit("Download Failed.")
 
-            file = image.name
-        else:
-            file = await event.client.download_media(reply.media)
-    if os.path.exists(inp):
-        os.remove(inp)
-    await bash(f'mv """{file}""" """{inp}"""')
-    if not os.path.exists(inp) or os.path.exists(inp) and not os.path.getsize(inp):
-        os.rename(file, inp)
-    k = time.time()
-    n_file, _ = await event.client.fast_uploader(
-        inp, show_progress=True, event=event, message="Uploading...", to_delete=True
-    )
-    await event.reply(
-        f"`{n_file.name}`",
-        file=n_file,
-        force_document=True,
-        thumb=ULTConfig.thumb,
-    )
-    os.remove(inp)
+    # Upload
+    try:
+        await event.reply_document(
+            document=file,
+            force_document=True,
+            thumb=ULTConfig.thumb,
+            caption=f"`{inp}`"
+        )
+    except Exception as er:
+        await xx.edit(f"Upload Error: {er}")
+    
+    if os.path.exists(file):
+        os.remove(file)
     await xx.delete()
 
 
@@ -122,47 +91,60 @@ conv_keys = {
 )
 async def uconverter(event):
     xx = await event.eor(get_string("com_1"))
-    a = await event.get_reply_message()
+    a = event.reply_to_message
     if a is None:
-        return await event.eor("`Reply to Photo or media with thumb...`")
-    input_ = event.pattern_match.group(1).strip()
-    b = await a.download_media("resources/downloads/")
-    if not b and (a.document and a.document.thumbs):
-        b = await a.download_media(thumb=-1)
+        return await event.eor("`Reply to Photo or media...`")
+        
+    input_ = event.matches[0].group(1).strip() if event.matches else None
+    
+    b = await a.download(file_name="resources/downloads/")
+    
     if not b:
         return await xx.edit(get_string("cvt_3"))
+        
     try:
-        convert = conv_keys[input_]
+        convert = conv_keys.get(input_, "png") # Default png
     except KeyError:
         return await xx.edit(get_string("sts_3").format("gif/img/sticker/webm"))
-    file = await con.convert(b, outname="ultroid", convert_to=convert)
-    print(file)
+        
+    # Using TgConverter (con)
+    file = await con.convert(b, outname="resources/downloads/ultroid", convert_to=convert)
 
-    if file:
-        await event.client.send_file(
-            event.chat_id, file, reply_to=event.reply_to_msg_id or event.id
+    if file and os.path.exists(file):
+        await event.reply_document(
+            document=file,
+            quote=True
         )
         os.remove(file)
     else:
         await xx.edit("`Failed to convert`")
         return
+        
+    if os.path.exists(b):
+        os.remove(b)
     await xx.delete()
 
 @ultroid_cmd(
     pattern="doc( (.*)|$)",
 )
 async def _(event):
-    input_str = event.pattern_match.group(1).strip()
-    if not (input_str and event.is_reply):
+    input_str = event.matches[0].group(1).strip() if event.matches else "message.txt"
+    if not event.reply_to_message:
         return await event.eor(get_string("cvt_1"), time=5)
+        
     xx = await event.eor(get_string("com_1"))
-    a = await event.get_reply_message()
-    if not a.message:
-        return await xx.edit(get_string("ex_1"))
-    with open(input_str, "w") as b:
-        b.write(str(a.message))
+    a = event.reply_to_message
+    
+    content = a.text or a.caption or str(a)
+    
+    with open(input_str, "w", encoding="utf-8") as b:
+        b.write(content)
+        
     await xx.edit(f"**Packing into** `{input_str}`")
-    await event.reply(file=input_str, thumb=ULTConfig.thumb)
+    await event.reply_document(
+        document=input_str, 
+        thumb=ULTConfig.thumb
+    )
     await xx.delete()
     os.remove(input_str)
 
@@ -171,26 +153,32 @@ async def _(event):
     pattern="open( (.*)|$)",
 )
 async def _(event):
-    a = await event.get_reply_message()
-    b = event.pattern_match.group(1).strip()
-    if not ((a and a.media) or (b and os.path.exists(b))):
+    a = event.reply_to_message
+    b = event.matches[0].group(1).strip() if event.matches else None
+    
+    if not ((a and (a.document or a.photo)) or (b and os.path.exists(b))):
         return await event.eor(get_string("cvt_7"), time=5)
+        
     xx = await event.eor(get_string("com_1"))
-    rem = None
-    if not b:
-        b = await a.download_media()
+    rem = False
+    
+    if not b and a:
+        b = await a.download()
         rem = True
+        
     try:
-        with open(b) as c:
+        with open(b, "r", encoding="utf-8", errors="ignore") as c:
             d = c.read()
-    except UnicodeDecodeError:
+    except Exception:
         return await xx.eor(get_string("cvt_8"), time=5)
-    try:
-        await xx.edit(f"```{d}```")
-    except BaseException:
+        
+    if len(d) > 4000:
         what, data = await get_paste(d)
         await xx.edit(
             f"**MESSAGE EXCEEDS TELEGRAM LIMITS**\n\nSo Pasted It On [SPACEBIN]({data['link']})"
         )
-    if rem:
+    else:
+        await xx.edit(f"```{d}```")
+        
+    if rem and os.path.exists(b):
         os.remove(b)

@@ -58,6 +58,40 @@ async def down(event):
     await msg.eor(f"`{filename}` `downloaded in {time_formatter(d*1000)}.`")
 
 
+@ultroid_cmd(pattern="dls( (.*)|$)")
+async def download_and_stream(event):
+    """Download from link and Upload to Chat"""
+    match = event.matches[0].group(1).strip() if event.matches else None
+    if not match:
+        return await event.eor("`Give me a link to download and upload!`")
+        
+    msg = await event.eor(get_string("udl_4"))
+    
+    try:
+        splited = match.split(" | ")
+        link = splited[0]
+        filename = splited[1] if len(splited) > 1 else None
+    except IndexError:
+        filename = None
+        
+    s_time = time.time()
+    try:
+        file_path, d = await fast_download(
+            link,
+            filename,
+            progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                progress(d, t, msg, s_time, f"Downloading...")
+            ),
+        )
+    except Exception as e:
+        return await msg.eor(f"`Download Error: {e}`", time=5)
+        
+    await msg.edit(f"`Downloading Finished. Uploading...`")
+    
+    # Upload Logic
+    await upload_process(event, msg, file_path, stream=False, force_doc=False, delete=True, thumb=ULTConfig.thumb)
+
+
 @ultroid_cmd(
     pattern="dl( (.*)|$)",
 )
@@ -74,40 +108,40 @@ async def download(event):
                 return await event.eor(f"Error getting message: {e}")
         else:
             return await event.eor(get_string("gms_1"))
-        match = None # Reset match so it doesn't interfere with filename
+        match = None
     elif not ok:
         return await event.eor(get_string("cvt_3"), time=8)
         
     xx = await event.eor(get_string("com_1"))
     
-    # Check media
     if not (ok and (ok.media or ok.photo or ok.video or ok.document or ok.audio or ok.voice or ok.sticker)):
         return await xx.eor(get_string("udl_1"), time=5)
         
     s = dt.now()
     k = time.time()
     
-    # Determine Filename
     filename = match
     if not filename:
         if ok.document:
             filename = ok.document.file_name
         elif ok.video:
-            filename = ok.video.file_name or f"video_{dt.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            filename = ok.video.file_name
         elif ok.audio:
-            filename = ok.audio.file_name or f"audio_{dt.now().strftime('%Y%m%d_%H%M%S')}.ogg"
-        elif ok.photo:
-            filename = f"jpg_{dt.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-        elif ok.sticker:
-            filename = f"sticker_{dt.now().strftime('%Y%m%d_%H%M%S')}.webp"
+            filename = ok.audio.file_name
             
     if not filename:
-        filename = f"download_{dt.now().strftime('%Y%m%d_%H%M%S')}"
+        # Generate generic name based on time
+        ext = ""
+        if ok.photo: ext = ".jpg"
+        elif ok.sticker: ext = ".webp"
+        elif ok.video: ext = ".mp4"
+        elif ok.audio: ext = ".ogg"
+        elif ok.voice: ext = ".ogg"
+        filename = f"file_{dt.now().strftime('%Y%m%d_%H%M%S')}{ext}"
 
     path = os.path.join("resources/downloads", filename)
     
     try:
-        # Native Pyrogram Download
         file_path = await ok.download(
             file_name=path,
             progress=progress,
@@ -188,7 +222,6 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                 reply_to_message_id=event.reply_to_message_id
             )
         elif stream:
-             # Guess type
              ext = os.path.splitext(file_path)[1].lower()
              if ext in [".mp4", ".mkv", ".webm"]:
                  await event._client.send_video(
@@ -222,6 +255,7 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                     reply_to_message_id=event.reply_to_message_id
                 )
         else:
+             # Smart detection fallback
              await event._client.send_document(
                 event.chat.id,
                 document=file_path,
