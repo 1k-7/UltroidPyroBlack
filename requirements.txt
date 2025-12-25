@@ -1,5 +1,5 @@
-# Important Requirements here.
-telethon
+# Important Requirements here
+pyroblack
 gitpython
 https://github.com/New-dev0/Telethon-Patch/archive/main.zip
 python-decouple
