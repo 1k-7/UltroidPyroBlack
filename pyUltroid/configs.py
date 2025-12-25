@@ -1,21 +1,15 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 import sys
-
 from decouple import config
 
 try:
     from dotenv import load_dotenv
-
     load_dotenv()
 except ImportError:
     pass
-
 
 class Var:
     # mandatory
@@ -28,6 +22,10 @@ class Var:
         else config("API_HASH", default="eb06d4abfb49dc3eeb1aeb98ae0f581e")
     )
     SESSION = sys.argv[3] if len(sys.argv) > 3 else config("SESSION", default=None)
+    
+    # Added OWNER_ID for Bot Mode compatibility
+    OWNER_ID = config("OWNER_ID", default=None, cast=int)
+
     REDIS_URI = (
         sys.argv[4]
         if len(sys.argv) > 4
