@@ -1,29 +1,17 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 import base64
 import os
 import random
 import re
 import string
-from logging import WARNING
 from random import choice, randrange, shuffle
-from traceback import format_exc
 from catbox import CatboxUploader
 
 from pyUltroid.exceptions import DependencyMissingError
-
-try:
-    from aiohttp import ContentTypeError
-except ImportError:
-    ContentTypeError = None
-
-from telethon.tl import types
-from telethon.utils import get_display_name, get_peer_id
+from pyroblack import enums, types
 
 from .. import *
 from .._misc._wrappers import eor
@@ -47,6 +35,11 @@ except ImportError:
     Image = None
 
 try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
     import cv2
 except ImportError:
     cv2 = None
@@ -55,26 +48,21 @@ try:
 except ImportError:
     np = None
 
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    BeautifulSoup = None
-
 uploader = CatboxUploader()
 
-async def randomchannel(
-    tochat, channel, range1, range2, caption=None, client=ultroid_bot
-):
+async def randomchannel(tochat, channel, range1, range2, caption=None, client=ultroid_bot):
     do = randrange(range1, range2)
-    async for x in client.iter_messages(channel, add_offset=do, limit=1):
-        caption = caption or x.text
-        try:
-            await client.send_message(tochat, caption, file=x.media)
-        except BaseException:
-            pass
-
-
-# --------------------------------------------------
+    # Pyrogram get_chat_history iteration
+    try:
+        # We assume offset works as skip count
+        async for x in client.get_chat_history(channel, limit=1, offset=do):
+             caption = caption or x.text or x.caption
+             if x.media:
+                 await x.copy(tochat, caption=caption)
+             elif caption:
+                 await client.send_message(tochat, caption)
+    except BaseException:
+        pass
 
 
 async def YtDataScraper(url: str):
@@ -94,7 +82,7 @@ async def YtDataScraper(url: str):
             "runs"
         ]
     except (KeyError, IndexError):
-        description_data = [{"text": "U hurrr from here"}]
+        description_data = [{"text": "No Description"}]
     description = "".join(
         description_datum["text"] for description_datum in description_data
     )
@@ -110,15 +98,9 @@ async def YtDataScraper(url: str):
         common_data["videoActions"]["menuRenderer"]["topLevelButtons"][0][
             "toggleButtonRenderer"
         ]["defaultText"]["simpleText"]
-        # or like_dislike[0]["toggleButtonRenderer"]["defaultText"]["accessibility"][
-        #     "accessibilityData"
-        # ]["label"]
     )
     to_return["description"] = description
     return to_return
-
-
-# --------------------------------------------------
 
 
 async def google_search(query):
@@ -147,9 +129,6 @@ async def google_search(query):
         except BaseException as er:
             LOGS.exception(er)
     return result
-
-
-# ----------------------------------------------------
 
 
 async def allcmds(event, telegraph):
@@ -183,10 +162,6 @@ async def ReTrieveFile(input_file_name):
             return True, name
 
 
-# ---------------- Unsplash Search ----------------
-# @New-Dev0
-
-
 async def unsplashsearch(query, limit=None, shuf=True):
     query = query.replace(" ", "-")
     link = "https://unsplash.com/s/photos/" + query
@@ -196,10 +171,6 @@ async def unsplashsearch(query, limit=None, shuf=True):
     if shuf:
         shuffle(all_)
     return list(map(lambda e: e['src'], all_[:limit]))
-
-
-# ---------------- Random User Gen ----------------
-# @xditya
 
 
 async def get_random_user_data():
@@ -250,9 +221,6 @@ async def get_random_user_data():
     return msg, pic
 
 
-# Dictionary (Synonyms and Antonyms)
-
-
 async def get_synonyms_or_antonyms(word, type_of_words):
     if type_of_words not in ["synonyms", "antonyms"]:
         return "Dude! Please give a corrent type of words you want."
@@ -270,109 +238,73 @@ async def get_synonyms_or_antonyms(word, type_of_words):
     return [y["term"] for y in li_1]
 
 
-# Quotly
-
-
 class Quotly:
     _API = "https://quoteampi.onrender.com/generate"
     _entities = {
-        types.MessageEntityPhone: "phone_number",
-        types.MessageEntityMention: "mention",
-        types.MessageEntityBold: "bold",
-        types.MessageEntityCashtag: "cashtag",
-        types.MessageEntityStrike: "strikethrough",
-        types.MessageEntityHashtag: "hashtag",
-        types.MessageEntityEmail: "email",
-        types.MessageEntityMentionName: "text_mention",
-        types.MessageEntityUnderline: "underline",
-        types.MessageEntityUrl: "url",
-        types.MessageEntityTextUrl: "text_link",
-        types.MessageEntityBotCommand: "bot_command",
-        types.MessageEntityCode: "code",
-        types.MessageEntityPre: "pre",
-        types.MessageEntitySpoiler: "spoiler",
+        enums.MessageEntityType.BOLD: "bold",
+        enums.MessageEntityType.ITALIC: "italic",
+        enums.MessageEntityType.UNDERLINE: "underline",
+        enums.MessageEntityType.STRIKETHROUGH: "strikethrough",
+        enums.MessageEntityType.SPOILER: "spoiler",
+        enums.MessageEntityType.CODE: "code",
+        enums.MessageEntityType.PRE: "pre",
+        enums.MessageEntityType.TEXT_LINK: "text_link",
+        enums.MessageEntityType.URL: "url",
+        enums.MessageEntityType.MENTION: "mention",
+        enums.MessageEntityType.HASHTAG: "hashtag",
+        enums.MessageEntityType.CASHTAG: "cashtag",
+        enums.MessageEntityType.BOT_COMMAND: "bot_command",
+        enums.MessageEntityType.EMAIL: "email",
+        enums.MessageEntityType.PHONE_NUMBER: "phone_number",
     }
 
-    async def _format_quote(self, event, reply=None, sender=None, type_="private"):
-        async def telegraph(file_):
-            file = file_ + ".png"
-            Image.open(file_).save(file, "PNG")
-            uri = uploader.upload_file(file)
-            os.remove(file)
-            os.remove(file_)
-            return uri
+    async def _format_quote(self, message: types.Message, reply=None, sender=None, type_="private"):
+        user_id = message.from_user.id if message.from_user else 0
+        name = message.from_user.first_name if message.from_user else "Deleted Account"
+        last_name = message.from_user.last_name if message.from_user else None
+        username = message.from_user.username if message.from_user else None
+        title = name
+        
+        if message.sender_chat:
+             user_id = message.sender_chat.id
+             name = message.sender_chat.title
+             title = name
 
-        if reply and reply.raw_text:
-            reply = {
-                "name": get_display_name(reply.sender) or "Deleted Account",
-                "text": reply.raw_text,
-                "chatId": reply.chat_id,
-            }
-        else:
-            reply = {}
-        is_fwd = event.fwd_from
-        name = None
-        last_name = None
-        if sender and sender.id not in DEVLIST:
-            id_ = get_peer_id(sender)
-        elif not is_fwd:
-            id_ = event.sender_id
-            sender = await event.get_sender()
-        else:
-            id_, sender = None, None
-            name = is_fwd.from_name
-            if is_fwd.from_id:
-                id_ = get_peer_id(is_fwd.from_id)
-                try:
-                    sender = await event.client.get_entity(id_)
-                except ValueError:
-                    pass
-        if sender:
-            name = get_display_name(sender)
-            if hasattr(sender, "last_name"):
-                last_name = sender.last_name
         entities = []
-        if event.entities:
-            for entity in event.entities:
-                if type(entity) in self._entities:
-                    enti_ = entity.to_dict()
-                    del enti_["_"]
-                    enti_["type"] = self._entities[type(entity)]
-                    entities.append(enti_)
-        text = event.raw_text
-        if isinstance(event, types.MessageService):
-            if isinstance(event.action, types.MessageActionGameScore):
-                text = f"scored {event.action.score}"
-                rep = await event.get_reply_message()
-                if rep and rep.game:
-                    text += f" in {rep.game.title}"
-            elif isinstance(event.action, types.MessageActionPinMessage):
-                text = "pinned a message."
-            # TODO: Are there any more events with sender?
-        message = {
+        if message.entities:
+            for entity in message.entities:
+                if entity.type in self._entities:
+                    entities.append({
+                        "type": self._entities[entity.type],
+                        "offset": entity.offset,
+                        "length": entity.length,
+                        "url": entity.url if entity.type == enums.MessageEntityType.TEXT_LINK else None
+                    })
+
+        text = message.text or message.caption or ""
+        
+        if message.service:
+             text = f"Service Message: {message.service}"
+
+        msg_json = {
             "entities": entities,
-            "chatId": id_,
+            "chatId": user_id,
             "avatar": True,
             "from": {
-                "id": id_,
-                "first_name": (name or (sender.first_name if sender else None))
-                or "Deleted Account",
+                "id": user_id,
+                "first_name": name,
                 "last_name": last_name,
-                "username": sender.username if sender else None,
+                "username": username,
                 "language_code": "en",
-                "title": name,
-                "name": name or "Deleted Account",
+                "title": title,
+                "name": name,
                 "type": type_,
             },
             "text": text,
-            "replyMessage": reply,
+            "replyMessage": reply or {},
         }
-        if event.document and event.document.thumbs:
-            file_ = await event.download_media(thumb=-1)
-            uri = await telegraph(file_)
-            message["media"] = {"url": uri}
-
-        return message
+        
+        return msg_json
 
     async def create_quotly(
         self,
@@ -383,15 +315,20 @@ class Quotly:
         sender=None,
         file_name="quote.webp",
     ):
-        """Create quotely's quote."""
         if not isinstance(event, list):
             event = [event]
+            
         from .. import udB
-
         if udB.get_key("OQAPI"):
             url = Quotly._API
         if not bg:
             bg = "#1b1429"
+            
+        msgs = []
+        for msg in event:
+            formatted = await self._format_quote(msg, reply=reply, sender=sender)
+            msgs.append(formatted)
+
         content = {
             "type": "quote",
             "format": "webp",
@@ -399,24 +336,14 @@ class Quotly:
             "width": 512,
             "height": 768,
             "scale": 2,
-            "messages": [
-                await self._format_quote(message, reply=reply, sender=sender)
-                for message in event
-            ],
+            "messages": msgs,
         }
+        
         try:
             request = await async_searcher(url, post=True, json=content, re_json=True)
-        except ContentTypeError as er:
-            if url != self._API:
-                return await self.create_quotly(
-                    event,
-                    url=self._API,
-                    bg=bg,
-                    sender=sender,
-                    reply=reply,
-                    file_name=file_name,
-                )
+        except Exception as er:
             raise er
+            
         if request.get("ok"):
             with open(file_name, "wb") as file:
                 image = base64.decodebytes(request["result"]["image"].encode("utf-8"))
@@ -431,9 +358,6 @@ def split_list(List, index):
         new_.extend([List[:index]])
         List = List[index:]
     return new_
-
-
-# https://stackoverflow.com/questions/9041681/opencv-python-rotate-image-by-x-degrees-around-specific-point
 
 
 def rotate_image(image, angle):

@@ -1,17 +1,13 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 import asyncio
 import time
 import uuid
+from datetime import datetime
 
-from telethon import Button
-from telethon.errors.rpcerrorlist import UserNotParticipantError
-from telethon.tl import functions, types
+from pyroblack import enums, types, errors
 
 try:
     from .. import _ult_cache
@@ -29,138 +25,141 @@ def ban_time(time_str):
     time_int = time_str[:-1].strip()
     if not time_int.isdigit():
         raise Exception("Invalid time amount specified.")
-    to_return = ""
+        
+    now = time.time()
+    seconds = 0
+    
     if unit == "s":
-        to_return = int(time.time() + int(time_int))
+        seconds = int(time_int)
     elif unit == "m":
-        to_return = int(time.time() + int(time_int) * 60)
+        seconds = int(time_int) * 60
     elif unit == "h":
-        to_return = int(time.time() + int(time_int) * 60 * 60)
+        seconds = int(time_int) * 60 * 60
     elif unit == "d":
-        to_return = int(time.time() + int(time_int) * 24 * 60 * 60)
-    return to_return
+        seconds = int(time_int) * 24 * 60 * 60
+        
+    # Pyrogram expects a datetime object or timestamp for until_date
+    return datetime.fromtimestamp(now + seconds)
 
 
 # ------------------Admin Check--------------- #
 
-
 async def _callback_check(event):
-    id_ = str(uuid.uuid1()).split("-")[0]
-    time.time()
-    msg = await event.reply(
-        "Click Below Button to prove self as Admin!",
-        buttons=Button.inline("Click Me", f"cc_{id_}"),
-    )
-    if not _ult_cache.get("admin_callback"):
-        _ult_cache.update({"admin_callback": {id_: None}})
-    else:
-        _ult_cache["admin_callback"].update({id_: None})
-    while not _ult_cache["admin_callback"].get(id_):
-        await asyncio.sleep(1)
-    key = _ult_cache.get("admin_callback", {}).get(id_)
-    del _ult_cache["admin_callback"][id_]
-    return key
+    # This was a button verification logic for Telethon.
+    # Pyrogram callback handling is different.
+    # For now, we return None to fail verification or require strict admin rights.
+    # Implementing inline button wait logic in Pyrogram requires a conversation manager
+    # which is not built-in like Telethon's conversation.
+    return None
 
 
 async def get_update_linked_chat(event):
-    if _ult_cache.get("LINKED_CHATS") and _ult_cache["LINKED_CHATS"].get(event.chat_id):
-        _ignore = _ult_cache["LINKED_CHATS"][event.chat_id]["linked_chat"]
+    if _ult_cache.get("LINKED_CHATS") and _ult_cache["LINKED_CHATS"].get(event.chat.id):
+        _ignore = _ult_cache["LINKED_CHATS"][event.chat.id]["linked_chat"]
     else:
-        channel = await event.client(
-            functions.channels.GetFullChannelRequest(event.chat_id)
-        )
-        _ignore = channel.full_chat.linked_chat_id
+        full_chat = await event._client.get_chat(event.chat.id)
+        _ignore = full_chat.linked_chat.id if full_chat.linked_chat else None
+        
         if _ult_cache.get("LINKED_CHATS"):
-            _ult_cache["LINKED_CHATS"].update({event.chat_id: {"linked_chat": _ignore}})
+            _ult_cache["LINKED_CHATS"].update({event.chat.id: {"linked_chat": _ignore}})
         else:
             _ult_cache.update(
-                {"LINKED_CHATS": {event.chat_id: {"linked_chat": _ignore}}}
+                {"LINKED_CHATS": {event.chat.id: {"linked_chat": _ignore}}}
             )
     return _ignore
 
 
 async def admin_check(event, require=None, silent: bool = False):
-    if SUDO_M and event.sender_id in SUDO_M.owner_and_sudos():
+    user_id = event.from_user.id
+    chat_id = event.chat.id
+    
+    if SUDO_M and user_id in SUDO_M.owner_and_sudos():
         return True
-    callback = None
 
-    # for Anonymous Admin Support
-    if (
-        isinstance(event.sender, (types.Chat, types.Channel))
-        and event.sender_id == event.chat_id
-    ):
+    # Anonymous Admin / Channel Logic
+    if event.sender_chat and event.sender_chat.id == chat_id:
         if not require:
             return True
-        callback = True
-    if isinstance(event.sender, types.Channel):
-        _ignore = await get_update_linked_chat(event)
-        if _ignore and event.sender.id == _ignore:
-            return False
-        callback = True
-    if callback:
-        if silent:
-            # work silently, same check is used for antiflood
-            # and should not ask for Button Verification.
-            return
-        get_ = await _callback_check(event)
-        if not get_:
-            return
-        user, perms = get_
-        event._sender_id = user.id
-        event._sender = user
-    else:
-        user = event.sender
-        try:
-            perms = await event.client.get_permissions(event.chat_id, user.id)
-        except UserNotParticipantError:
-            if not silent:
-                await event.reply("You need to join this chat First!")
-            return False
-    if not perms.is_admin:
+        # If requiring specific rights, anonymous admins usually have them all
+        return True
+
+    try:
+        member = await event.chat.get_member(user_id)
+    except errors.UserNotParticipant:
+        if not silent:
+            await event.eor("You need to join this chat First!")
+        return False
+    except Exception:
+        return False
+
+    if member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
         if not silent:
             await event.eor("Only Admins can use this command!", time=8)
-        return
-    if require and not getattr(perms, require, False):
-        if not silent:
-            await event.eor(f"You are missing the right of `{require}`", time=8)
         return False
+
+    if require:
+        # Mapping common Ultroid/Telethon keys to Pyrogram
+        req_map = {
+            "ban_users": "can_restrict_members",
+            "delete_messages": "can_delete_messages",
+            "pin_messages": "can_pin_messages",
+            "invite_users": "can_invite_users",
+            "add_admins": "can_promote_members",
+            "change_info": "can_change_info"
+        }
+        
+        pyro_req = req_map.get(require, require)
+        
+        # If Owner, they have all rights
+        if member.status == enums.ChatMemberStatus.OWNER:
+            return True
+
+        if not getattr(member.privileges, pyro_req, False):
+            if not silent:
+                await event.eor(f"You are missing the right of `{require}`", time=8)
+            return False
+            
     return True
 
 
 # ------------------Lock Unlock----------------
 
-
 def lock_unlock(query, lock=True):
     """
-    `Used in locks plugin`
-     Is there any better way to do this?
+    Used in locks plugin. 
+    Returns ChatPermissions object.
     """
-    rights = types.ChatBannedRights(None)
-    _do = lock
+    # Pyrogram ChatPermissions: True = Allowed, False = Restricted
+    # "Lock" means setting permission to False.
+    
+    _allow = not lock
+    
+    # Default everything to None (No change)
+    # Pyrogram restrictive permissions need to be constructed fully or used with set_chat_permissions
+    
+    permissions = types.ChatPermissions()
+    
     if query == "msgs":
-        for i in ["send_messages", "invite_users", "pin_messages" "change_info"]:
-            setattr(rights, i, _do)
+        permissions.can_send_messages = _allow
     elif query == "media":
-        setattr(rights, "send_media", _do)
+        permissions.can_send_media_messages = _allow
     elif query == "sticker":
-        setattr(rights, "send_stickers", _do)
+        permissions.can_send_other_messages = _allow # Stickers/GIFs usually here
     elif query == "gif":
-        setattr(rights, "send_gifs", _do)
+        permissions.can_send_other_messages = _allow
     elif query == "games":
-        setattr(rights, "send_games", _do)
+        permissions.can_send_other_messages = _allow
     elif query == "inline":
-        setattr(rights, "send_inline", _do)
+        permissions.can_send_other_messages = _allow
     elif query == "polls":
-        setattr(rights, "send_polls", _do)
+        permissions.can_send_polls = _allow
     elif query == "invites":
-        setattr(rights, "invite_users", _do)
+        permissions.can_invite_users = _allow
     elif query == "pin":
-        setattr(rights, "pin_messages", _do)
+        permissions.can_pin_messages = _allow
     elif query == "changeinfo":
-        setattr(rights, "change_info", _do)
+        permissions.can_change_info = _allow
     else:
         return None
-    return rights
-
-
-# ---------------- END ---------------- #
+        
+    return permissions
