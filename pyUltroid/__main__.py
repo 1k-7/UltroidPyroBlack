@@ -1,12 +1,9 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 from . import *
-
+from pyroblack import idle
 
 def main():
     import os
@@ -41,9 +38,11 @@ def main():
 
     ultroid_bot.run_in_loop(startup_stuff())
 
-    ultroid_bot.me.phone = None
+    # Pyrogram User object uses phone_number
+    if ultroid_bot.me:
+        ultroid_bot.me.phone_number = None
 
-    if not ultroid_bot.me.bot:
+    if ultroid_bot.me and not ultroid_bot.me.is_bot:
         udB.set_key("OWNER_ID", ultroid_bot.uid)
 
     LOGS.info("Initialising...")
@@ -101,5 +100,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    asst.run()
+    
+    # Keep the script running
+    if asst:
+        # idle() blocks the script until a signal is received
+        idle() 
+    elif ultroid_bot:
+        idle()

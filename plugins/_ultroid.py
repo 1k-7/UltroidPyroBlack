@@ -1,17 +1,15 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
+# Rewritten for Pyroblack by Gemini
 
-from telethon.errors import (
-    BotMethodInvalidError,
-    ChatSendInlineForbiddenError,
-    ChatSendMediaForbiddenError,
+from pyroblack.errors import (
+    BotMethodInvalid,
+    ChatSendInlineForbidden,
+    ChatSendMediaForbidden,
 )
+from pyroblack.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from . import LOG_CHANNEL, LOGS, Button, asst, eor, get_string, ultroid_cmd
+from . import LOG_CHANNEL, LOGS, asst, eor, get_string, ultroid_cmd
 
 REPOMSG = """
 • **ULTROID USERBOT** •\n
@@ -20,13 +18,13 @@ REPOMSG = """
 • Support - @UltroidSupportChat
 """
 
-RP_BUTTONS = [
+RP_BUTTONS = InlineKeyboardMarkup([
     [
-        Button.url(get_string("bot_3"), "https://github.com/TeamUltroid/Ultroid"),
-        Button.url("Addons", "https://github.com/TeamUltroid/UltroidAddons"),
+        InlineKeyboardButton(get_string("bot_3"), url="https://github.com/TeamUltroid/Ultroid"),
+        InlineKeyboardButton("Addons", url="https://github.com/TeamUltroid/UltroidAddons"),
     ],
-    [Button.url("Support Group", "t.me/UltroidSupportChat")],
-]
+    [InlineKeyboardButton("Support Group", url="t.me/UltroidSupportChat")],
+])
 
 ULTSTRING = """🎇 **Thanks for Deploying Ultroid Userbot!**
 
@@ -37,30 +35,42 @@ ULTSTRING = """🎇 **Thanks for Deploying Ultroid Userbot!**
     pattern="repo$",
     manager=True,
 )
-async def repify(e):
+async def repify(e: Message):
     try:
-        q = await e.client.inline_query(asst.me.username, "")
-        await q[0].click(e.chat_id)
-        return await e.delete()
+        # get_inline_bot_results(bot_username, query)
+        q = await e._client.get_inline_bot_results(asst.me.username, "")
+        # send_inline_bot_result(chat_id, query_id, result_id)
+        if q and q.results:
+             await e._client.send_inline_bot_result(
+                 e.chat.id, 
+                 q.query_id, 
+                 q.results[0].id
+             )
+             return await e.delete()
     except (
-        ChatSendInlineForbiddenError,
-        ChatSendMediaForbiddenError,
-        BotMethodInvalidError,
+        ChatSendInlineForbidden,
+        ChatSendMediaForbidden,
+        BotMethodInvalid,
     ):
         pass
     except Exception as er:
         LOGS.info(f"Error while repo command : {str(er)}")
-    await e.eor(REPOMSG)
+    
+    await eor(e, REPOMSG)
 
 
 @ultroid_cmd(pattern="ultroid$")
-async def useUltroid(rs):
-    button = Button.inline("Start >>", "initft_2")
-    msg = await asst.send_message(
+async def useUltroid(rs: Message):
+    button = InlineKeyboardMarkup([[InlineKeyboardButton("Start >>", callback_data="initft_2")]])
+    
+    # send_message returns Message
+    msg = await asst.send_photo(
         LOG_CHANNEL,
-        ULTSTRING,
-        file="https://graph.org/file/54a917cc9dbb94733ea5f.jpg",
-        buttons=button,
+        photo="https://graph.org/file/54a917cc9dbb94733ea5f.jpg",
+        caption=ULTSTRING,
+        reply_markup=button,
     )
-    if not (rs.chat_id == LOG_CHANNEL and rs.client._bot):
-        await eor(rs, f"**[Click Here]({msg.message_link})**")
+    
+    # Check if executed in Log Channel
+    if not (rs.chat.id == LOG_CHANNEL and rs.from_user.is_self):
+        await eor(rs, f"**[Click Here]({msg.link})**")

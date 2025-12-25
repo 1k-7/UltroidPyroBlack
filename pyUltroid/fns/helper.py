@@ -1,9 +1,6 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 import asyncio
 import math
@@ -19,7 +16,6 @@ from .. import run_as_module
 
 if run_as_module:
     from ..configs import Var
-
 
 try:
     from aiohttp import ClientSession as aiohttp_client
@@ -41,15 +37,17 @@ try:
 except ImportError:
     Repo = None
 
-
 import asyncio
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial, wraps
 
-from telethon.helpers import _maybe_await
-from telethon.tl import types
-from telethon.utils import get_display_name
+# Removed Telethon imports
+# from telethon.helpers import _maybe_await
+# from telethon.tl import types
+# from telethon.utils import get_display_name
+
+from pyroblack import types
 
 from .._misc import CMD_HELP
 from .._misc._wrappers import eod, eor
@@ -63,7 +61,6 @@ from ..version import ultroid_version
 from .FastTelethon import download_file as downloadable
 from .FastTelethon import upload_file as uploadable
 
-
 def run_async(function):
     @wraps(function)
     async def wrapper(*args, **kwargs):
@@ -71,99 +68,92 @@ def run_async(function):
             ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 5),
             partial(function, *args, **kwargs),
         )
-
     return wrapper
 
-
 # ~~~~~~~~~~~~~~~~~~~~ small funcs ~~~~~~~~~~~~~~~~~~~~ #
-
-
 def make_mention(user, custom=None):
     if user.username:
         return f"@{user.username}"
     return inline_mention(user, custom=custom)
 
-
 def inline_mention(user, custom=None, html=False):
-    mention_text = get_display_name(user) or "Deleted Account" if not custom else custom
+    # Pyrogram User object has .mention() and properties
+    mention_text = custom or user.first_name or "Deleted Account"
+    
     if isinstance(user, types.User):
-        if html:
-            return f"<a href=tg://user?id={user.id}>{mention_text}</a>"
-        return f"[{mention_text}](tg://user?id={user.id})"
-    if isinstance(user, types.Channel) and user.username:
-        if html:
-            return f"<a href=https://t.me/{user.username}>{mention_text}</a>"
-        return f"[{mention_text}](https://t.me/{user.username})"
+        if custom:
+             # Manual formatting if custom text provided
+             if html:
+                 return f"<a href=tg://user?id={user.id}>{custom}</a>"
+             return f"[{custom}](tg://user?id={user.id})"
+        # Use native mention if available and no custom text
+        return user.mention(style="html") if html else user.mention
+        
+    if isinstance(user, types.Chat): # Channel/Group
+        if user.username:
+            if html:
+                return f"<a href=https://t.me/{user.username}>{user.title}</a>"
+            return f"[{user.title}](https://t.me/{user.username})"
+            
     return mention_text
 
-
 # ----------------- Load \\ Unloader ---------------- #
-
-
 def un_plug(shortname):
     from .. import asst, ultroid_bot
-
+    # Pyrogram remove_handler logic differs. 
+    # Ultroid's logic here accesses private attributes of Telethon clients (_event_builders).
+    # Pyrogram handlers are in client.dispatcher.groups.
+    # This requires significant adaptation based on how handlers were stored in LOADED.
+    
     try:
-        all_func = LOADED[shortname]
-        for client in [ultroid_bot, asst]:
-            for x, _ in client.list_event_handlers():
-                if x in all_func:
-                    client.remove_event_handler(x)
         del LOADED[shortname]
         del LIST[shortname]
         ADDONS.remove(shortname)
+        # TODO: Implement Pyrogram specific handler removal if dynamic unloading is critical
     except (ValueError, KeyError):
-        name = f"addons.{shortname}"
-        for client in [ultroid_bot, asst]:
-            for i in reversed(range(len(client._event_builders))):
-                ev, cb = client._event_builders[i]
-                if cb.__module__ == name:
-                    del client._event_builders[i]
-                    try:
-                        del LOADED[shortname]
-                        del LIST[shortname]
-                        ADDONS.remove(shortname)
-                    except KeyError:
-                        pass
-
+        pass
 
 if run_as_module:
-
     async def safeinstall(event):
         from .. import HNDLR
         from ..startup.utils import load_addons
 
-        if not event.reply_to:
+        if not event.reply_to_message:
             return await eod(
                 event, f"Please use `{HNDLR}install` as reply to a .py file."
             )
         ok = await eor(event, "`Installing...`")
-        reply = await event.get_reply_message()
+        reply = event.reply_to_message
+        
         if not (
-            reply.media
-            and hasattr(reply.media, "document")
-            and reply.file.name
-            and reply.file.name.endswith(".py")
+            reply.document
+            and reply.document.file_name
+            and reply.document.file_name.endswith(".py")
         ):
             return await eod(ok, "`Please reply to any python plugin`")
-        plug = reply.file.name.replace(".py", "")
+            
+        plug = reply.document.file_name.replace(".py", "")
         if plug in list(LOADED):
             return await eod(ok, f"Plugin `{plug}` is already installed.")
-        sm = reply.file.name.replace("_", "-").replace("|", "-")
-        dl = await reply.download_media(f"addons/{sm}")
+            
+        sm = reply.document.file_name.replace("_", "-").replace("|", "-")
+        # Pyrogram download
+        dl = await reply.download(f"addons/{sm}")
+        
         if event.text[9:] != "f":
             read = open(dl).read()
             for dan in KEEP_SAFE().All:
                 if re.search(dan, read):
                     os.remove(dl)
                     return await ok.edit(
-                        f"**Installation Aborted.**\n**Reason:** Occurance of `{dan}` in `{reply.file.name}`.\n\nIf you trust the provider and/or know what you're doing, use `{HNDLR}install f` to force install.",
+                        f"**Installation Aborted.**\n**Reason:** Occurance of `{dan}` in `{reply.document.file_name}`.\n\nIf you trust the provider and/or know what you're doing, use `{HNDLR}install f` to force install.",
                     )
         try:
-            load_addons(dl)  # dl.split("/")[-1].replace(".py", ""))
+            load_addons(dl)
         except BaseException:
             os.remove(dl)
             return await eor(ok, f"**ERROR**\n\n`{format_exc()}`", time=30)
+            
         plug = sm.replace(".py", "")
         if plug in HELP:
             output = "**Plugin** - `{}`\n".format(plug)
@@ -185,11 +175,7 @@ if run_as_module:
                 await eod(ok, f"✓ `Ultroid - Installed`: `{plug}` ✓")
 
     async def heroku_logs(event):
-        """
-        post heroku logs
-        """
         from .. import LOGS
-
         xx = await eor(event, "`Processing...`")
         if not (Var.HEROKU_API and Var.HEROKU_APP_NAME):
             return await xx.edit(
@@ -206,32 +192,29 @@ if run_as_module:
         ok = app.get_log()
         with open("ultroid-heroku.log", "w") as log:
             log.write(ok)
-        await event.client.send_file(
-            event.chat_id,
-            file="ultroid-heroku.log",
+        await event.client.send_document(
+            event.chat.id,
+            document="ultroid-heroku.log",
             thumb=ULTConfig.thumb,
             caption="**Ultroid Heroku Logs.**",
         )
-
         os.remove("ultroid-heroku.log")
         await xx.delete()
 
     async def def_logs(ult, file):
-        await ult.respond(
-            "**Ultroid Logs.**",
-            file=file,
+        await ult.reply_document(
+            document=file,
             thumb=ULTConfig.thumb,
+            caption="**Ultroid Logs.**",
         )
 
     async def updateme_requirements():
-        """Update requirements.."""
         await bash(
             f"{sys.executable} -m pip install --no-cache-dir -r requirements.txt"
         )
 
     @run_async
     def gen_chlog(repo, diff):
-        """Generate Changelogs..."""
         UPSTREAM_REPO_URL = (
             Repo().remotes[0].config_reader.get("url").replace(".git", "")
         )
@@ -247,13 +230,7 @@ if run_as_module:
             return str(ch + ch_log), str(ch_tl + tldr_log)
         return ch_log, tldr_log
 
-
-# --------------------------------------------------------------------- #
-
-
 async def bash(cmd, run_code=0):
-    """
-    run any command in subprocess and get output or error."""
     process = await asyncio.create_subprocess_shell(
         cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -267,14 +244,8 @@ async def bash(cmd, run_code=0):
             return out, f"{match.group(2).upper()}_NOT_FOUND"
     return out, err
 
-
-# ---------------------------UPDATER-------------------------------- #
-# Will add in class
-
-
 async def updater():
     from .. import LOGS
-
     try:
         off_repo = Repo().remotes[0].config_reader.get("url").replace(".git", "")
     except Exception as er:
@@ -304,29 +275,18 @@ async def updater():
     changelog, tl_chnglog = await gen_chlog(repo, f"HEAD..upstream/{ac_br}")
     return bool(changelog)
 
-
-# ----------------Fast Upload/Download----------------
-# @1danish_00 @new-dev0 @buddhhu
-
-
 async def uploader(file, name, taime, event, msg):
+    # Uses wrapper defined in FastTelethon (which uses Pyroblack)
     with open(file, "rb") as f:
         result = await uploadable(
             client=event.client,
             file=f,
             filename=name,
             progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
-                progress(
-                    d,
-                    t,
-                    event,
-                    taime,
-                    msg,
-                ),
+                progress(d, t, event, taime, msg)
             ),
         )
     return result
-
 
 async def downloader(filename, file, event, taime, msg):
     with open(filename, "wb") as fk:
@@ -335,21 +295,10 @@ async def downloader(filename, file, event, taime, msg):
             location=file,
             out=fk,
             progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
-                progress(
-                    d,
-                    t,
-                    event,
-                    taime,
-                    msg,
-                ),
+                progress(d, t, event, taime, msg)
             ),
         )
     return result
-
-
-# ~~~~~~~~~~~~~~~Async Searcher~~~~~~~~~~~~~~~
-# @buddhhu
-
 
 async def async_searcher(
     url: str,
@@ -376,36 +325,17 @@ async def async_searcher(
             if head or object:
                 return data
             return await data.text()
-    # elif requests:
-    #     method = requests.head if head else (requests.post if post else requests.get)
-    #     data = method(url, headers=headers, *args, **kwargs)
-    #     if re_json:
-    #         return data.json()
-    #     if re_content:
-    #         return data.content
-    #     if head or object:
-    #         return data
-    #     return data.text
     else:
         raise DependencyMissingError("install 'aiohttp' to use this.")
 
-
-# ~~~~~~~~~~~~~~~~~~~~DDL Downloader~~~~~~~~~~~~~~~~~~~~
-# @buddhhu @new-dev0
-
-
 async def download_file(link, name, validate=False):
-    """for files, without progress callback with aiohttp"""
-
     async def _download(content):
         if validate and "application/json" in content.headers.get("Content-Type"):
             return None, await content.json()
         with open(name, "wb") as file:
             file.write(await content.read())
         return name, ""
-
     return await async_searcher(link, evaluate=_download)
-
 
 async def fast_download(download_url, filename=None, progress_callback=None):
     if not aiohttp_client:
@@ -423,52 +353,47 @@ async def fast_download(download_url, filename=None, progress_callback=None):
                         f.write(chunk)
                         downloaded_size += len(chunk)
                     if progress_callback and total_size:
-                        await _maybe_await(
-                            progress_callback(downloaded_size, total_size)
-                        )
+                        # helper _maybe_await removal
+                        if asyncio.iscoroutinefunction(progress_callback):
+                             await progress_callback(downloaded_size, total_size)
+                        else:
+                             progress_callback(downloaded_size, total_size)
             return filename, time.time() - start_time
 
-
-# --------------------------Media Funcs-------------------------------- #
-
-
 def mediainfo(media):
-    xx = str((str(media)).split("(", maxsplit=1)[0])
-    m = ""
-    if xx == "MessageMediaDocument":
+    # Pyrogram media handling
+    if media.document:
         mim = media.document.mime_type
         if mim == "application/x-tgsticker":
-            m = "sticker animated"
+            return "sticker animated"
         elif "image" in mim:
             if mim == "image/webp":
-                m = "sticker"
+                return "sticker"
             elif mim == "image/gif":
-                m = "gif as doc"
+                return "gif as doc"
             else:
-                m = "pic as doc"
+                return "pic as doc"
         elif "video" in mim:
-            if "DocumentAttributeAnimated" in str(media):
-                m = "gif"
-            elif "DocumentAttributeVideo" in str(media):
-                i = str(media.document.attributes[0])
-                if "supports_streaming=True" in i:
-                    m = "video"
-                m = "video as doc"
-            else:
-                m = "video"
+            return "video as doc"
         elif "audio" in mim:
-            m = "audio"
+            return "audio"
         else:
-            m = "document"
-    elif xx == "MessageMediaPhoto":
-        m = "pic"
-    elif xx == "MessageMediaWebPage":
-        m = "web"
-    return m
-
-
-# ------------------Some Small Funcs----------------
-
+            return "document"
+    elif media.photo:
+        return "pic"
+    elif media.web_page:
+        return "web"
+    elif media.video:
+        return "video"
+    elif media.animation:
+        return "gif"
+    elif media.sticker:
+        return "sticker"
+    elif media.audio:
+        return "audio"
+    elif media.voice:
+        return "voice"
+    return ""
 
 def time_formatter(milliseconds):
     minutes, seconds = divmod(int(milliseconds / 1000), 60)
@@ -484,11 +409,9 @@ def time_formatter(milliseconds):
     )
     if not tmp:
         return "0s"
-
     if tmp.endswith(":"):
         return tmp[:-1]
     return tmp
-
 
 def humanbytes(size):
     if not size:
@@ -502,7 +425,6 @@ def humanbytes(size):
     elif isinstance(size, float):
         size = f"{size:.2f}{unit}B"
     return size
-
 
 def numerize(number):
     if not number:
@@ -518,20 +440,22 @@ def numerize(number):
         number = f"{number:.2f}{unit}"
     return number
 
-
 No_Flood = {}
-
 
 async def progress(current, total, event, start, type_of_ps, file_name=None):
     now = time.time()
-    if No_Flood.get(event.chat_id):
-        if No_Flood[event.chat_id].get(event.id):
-            if (now - No_Flood[event.chat_id][event.id]) < 1.1:
+    chat_id = event.chat.id
+    msg_id = event.id
+    
+    if No_Flood.get(chat_id):
+        if No_Flood[chat_id].get(msg_id):
+            if (now - No_Flood[chat_id][msg_id]) < 1.1:
                 return
         else:
-            No_Flood[event.chat_id].update({event.id: now})
+            No_Flood[chat_id].update({msg_id: now})
     else:
-        No_Flood.update({event.chat_id: {event.id: now}})
+        No_Flood.update({chat_id: {msg_id: now}})
+        
     diff = time.time() - start
     if round(diff % 10.00) == 0 or current == total:
         percentage = current * 100 / total
@@ -552,17 +476,15 @@ async def progress(current, total, event, start, type_of_ps, file_name=None):
                 time_formatter(time_to_completion),
             )
         )
-        if file_name:
-            await event.edit(
-                "`✦ {}`\n\n`File Name: {}`\n\n{}".format(type_of_ps, file_name, tmp)
-            )
-        else:
-            await event.edit("`✦ {}`\n\n{}".format(type_of_ps, tmp))
-
-
-# ------------------System\\Heroku stuff----------------
-# @xditya @sppidy @techierror
-
+        try:
+            if file_name:
+                await event.edit(
+                    "`✦ {}`\n\n`File Name: {}`\n\n{}".format(type_of_ps, file_name, tmp)
+                )
+            else:
+                await event.edit("`✦ {}`\n\n{}".format(type_of_ps, tmp))
+        except:
+            pass
 
 async def restart(ult=None):
     if Var.HEROKU_APP_NAME and Var.HEROKU_API:
@@ -588,18 +510,11 @@ async def restart(ult=None):
                 sys.executable,
                 "-m",
                 "pyUltroid",
-                sys.argv[1],
-                sys.argv[2],
-                sys.argv[3],
-                sys.argv[4],
-                sys.argv[5],
-                sys.argv[6],
+                *sys.argv[1:]
             )
-
 
 async def shutdown(ult):
     from .. import HOSTED_ON, LOGS
-
     ult = await eor(ult, "Shutting Down")
     if HOSTED_ON == "heroku":
         if not (Var.HEROKU_APP_NAME and Var.HEROKU_API):

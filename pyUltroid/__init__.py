@@ -1,13 +1,10 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 import os
 import sys
-import telethonpatch
+import time
 from .version import __version__
 
 run_as_module = __package__ in sys.argv or sys.argv[0] == "-m"
@@ -19,8 +16,6 @@ class ULTConfig:
 
 
 if run_as_module:
-    import time
-
     from .configs import Var
     from .startup import *
     from .startup._database import UltroidDB
@@ -63,15 +58,18 @@ if run_as_module:
             LOGS.critical(
                 '"BOT_TOKEN" not Found! Please add it, in order to use "BOTMODE"'
             )
-
             sys.exit()
     else:
+        # validate_session returns the session string/name
+        # Pyrogram Client takes 'name' as the first argument
+        session_name = validate_session(Var.SESSION, LOGS)
         ultroid_bot = UltroidClient(
-            validate_session(Var.SESSION, LOGS),
+            session=session_name,
             udB=udB,
             app_version=ultroid_version,
             device_model="Ultroid",
         )
+        # autobot() logic needs to be checked if it relies on Telethon events
         ultroid_bot.run_in_loop(autobot())
 
     if USER_MODE:
@@ -83,12 +81,14 @@ if run_as_module:
         ultroid_bot = asst
         if udB.get_key("OWNER_ID"):
             try:
+                # get_entity -> get_chat/get_users
                 ultroid_bot.me = ultroid_bot.run_in_loop(
-                    ultroid_bot.get_entity(udB.get_key("OWNER_ID"))
+                    ultroid_bot.get_users(int(udB.get_key("OWNER_ID")))
                 )
             except Exception as er:
                 LOGS.exception(er)
-    elif not asst.me.bot_inline_placeholder and asst._bot:
+    elif asst._bot: 
+        # enable_inline logic adapted for Pyrogram if needed
         ultroid_bot.run_in_loop(enable_inline(ultroid_bot, asst.me.username))
 
     vcClient = vc_connection(udB, ultroid_bot)

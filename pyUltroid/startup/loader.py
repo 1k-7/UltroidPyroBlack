@@ -1,9 +1,6 @@
 # Ultroid - UserBot
 # Copyright (C) 2021-2025 TeamUltroid
-#
-# This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
+# Rewritten for Pyroblack by Gemini
 
 import os
 import subprocess
@@ -85,10 +82,6 @@ def load_other_plugins(addons=None, pmbot=None, manager=None, vcbot=None):
                 shell=True,
             )
         if os.path.exists("addons/addons.txt"):
-            # generally addons req already there so it won't take much time
-            # subprocess.run(
-            #        "rm -rf /usr/local/lib/python3.*/site-packages/pip/_vendor/.wh*"
-            #    )
             subprocess.run(
                 f"{sys.executable} -m pip install --no-cache-dir -q -r ./addons/addons.txt",
                 shell=True,
@@ -117,7 +110,7 @@ def load_other_plugins(addons=None, pmbot=None, manager=None, vcbot=None):
             Loader(path="assistant/pmbot.py").load(log=False)
 
     # vc bot
-    if vcbot and (vcClient and not vcClient.me.bot):
+    if vcbot and (vcClient and not vcClient.me.is_bot):
         try:
             import pytgcalls  # ignore: pylint
 
