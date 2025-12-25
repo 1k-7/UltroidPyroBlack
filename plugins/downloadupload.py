@@ -12,14 +12,14 @@ import os
 import time
 from datetime import datetime as dt
 
-from pyUltroid.fns.helper import time_formatter
+# Import from exact locations to avoid ImportError
+from pyUltroid.fns.helper import time_formatter, fast_download
 from pyUltroid.fns.tools import get_chat_and_msgid, set_attributes
 
 from . import (
     LOGS,
     ULTConfig,
     eor,
-    fast_download,
     get_all_files,
     get_string,
     progress,
@@ -86,6 +86,9 @@ async def download_and_stream(event):
     except Exception as e:
         return await msg.eor(f"`Download Error: {e}`", time=5)
         
+    if not file_path or not os.path.exists(file_path):
+        return await msg.edit("`Download failed or file not found.`")
+
     await msg.edit(f"`Downloading Finished. Uploading...`")
     
     # Upload Logic
@@ -114,7 +117,8 @@ async def download(event):
         
     xx = await event.eor(get_string("com_1"))
     
-    if not (ok and (ok.media or ok.photo or ok.video or ok.document or ok.audio or ok.voice or ok.sticker)):
+    # Check if message has media
+    if not (ok and (ok.media or ok.photo or ok.video or ok.document or ok.audio or ok.voice or ok.sticker or ok.animation)):
         return await xx.eor(get_string("udl_1"), time=5)
         
     s = dt.now()
@@ -130,14 +134,19 @@ async def download(event):
             filename = ok.audio.file_name
             
     if not filename:
-        # Generate generic name based on time
+        # Generate generic name
         ext = ""
         if ok.photo: ext = ".jpg"
         elif ok.sticker: ext = ".webp"
         elif ok.video: ext = ".mp4"
         elif ok.audio: ext = ".ogg"
         elif ok.voice: ext = ".ogg"
+        elif ok.animation: ext = ".gif"
         filename = f"file_{dt.now().strftime('%Y%m%d_%H%M%S')}{ext}"
+
+    # Ensure directory exists
+    if not os.path.exists("resources/downloads"):
+        os.makedirs("resources/downloads")
 
     path = os.path.join("resources/downloads", filename)
     
@@ -190,11 +199,8 @@ async def upload_cmd(event):
         results = [match]
         
     if not results:
-        try:
-            await event.reply_document(match)
-            return await event.try_delete()
-        except:
-            pass
+        # Check if reply has file to re-upload?
+        # Original logic implies file path input.
         return await msg.eor(get_string("ls1"))
         
     for result in results:
@@ -255,7 +261,6 @@ async def upload_process(event, msg, file_path, stream, force_doc, delete, thumb
                     reply_to_message_id=event.reply_to_message_id
                 )
         else:
-             # Smart detection fallback
              await event._client.send_document(
                 event.chat.id,
                 document=file_path,
